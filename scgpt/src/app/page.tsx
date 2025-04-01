@@ -10,13 +10,39 @@ export interface IPStats {
   recentRequests: number;
 }
 
+// Helper function to validate IP address
+function isValidIP(ip: string): boolean {
+  // Validate IPv4
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(ip)) {
+    const parts = ip.split('.');
+    return parts.length === 4 && parts.every(part => {
+      const num = parseInt(part, 10);
+      return num >= 0 && num <= 255 && part === num.toString();
+    });
+  }
+  
+  // Basic IPv6 check (not exhaustive)
+  if (ip.includes(':')) {
+    return /^[0-9a-f:]+$/i.test(ip);
+  }
+  
+  return false;
+}
+
 async function getIpStats(): Promise<IPStats> {
   await connectToDatabase();
 
   // Get the client's IP address
   const headersList = await headers();
   const forwardedFor = headersList.get("x-forwarded-for");
-  const ip = forwardedFor ? forwardedFor.split(",")[0].trim() : "unknown";
+  
+  let ip = "unknown";
+  if (forwardedFor) {
+    const clientIP = forwardedFor.split(",")[0].trim();
+    if (isValidIP(clientIP)) {
+      ip = clientIP;
+    }
+  }
 
   // Count total requests from this IP
   const totalRequests = await RequestLog.countDocuments({ ip });

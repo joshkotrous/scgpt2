@@ -159,13 +159,15 @@ export async function queryUEX({
       );
       throw new Error("Validation failed.");
     }
-    console.error(
-      `Could not query UEX API: \n\n ${endpoint} \n\n ${JSON.stringify(
-        queryParams,
-        null,
-        2
-      )}`
-    );
+    // Modified error logging to prevent leaking sensitive information
+    console.error(`Could not query UEX API: ${endpoint}`);
+    
+    // Log parameter names but not values to assist debugging without leaking sensitive data
+    if (queryParams) {
+      const paramNames = Object.keys(queryParams).join(', ');
+      console.error(`Parameters used: [${paramNames}]`);
+    }
+    
     throw error;
   }
 }

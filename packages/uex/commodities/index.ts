@@ -25,6 +25,19 @@ import {
   UEXListCommodityRawPricesResponseObject,
 } from "./types";
 
+// Create a validation schema for CommodityPricesFilter values
+const CommodityPricesFilterValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.array(z.union([z.string(), z.number(), z.boolean()])),
+  z.null(),
+  z.undefined(),
+]);
+
+// Create a validation schema for the entire CommodityPricesFilter
+const CommodityPricesFilterSchema = z.record(CommodityPricesFilterValueSchema);
+
 export async function listCommoditiesAlerts({
   filter,
 }: {
@@ -66,13 +79,23 @@ export async function listCommoditiesPrices({
     );
   }
 
-  const result = await queryUEX({
-    endpoint,
-    queryParams: filter,
-    validationObject: UEXCommodityPricesResponseObject,
-  });
+  // Validate the filter to protect against adversarial input manipulation
+  try {
+    const validatedFilter = CommodityPricesFilterSchema.parse(filter);
+    
+    const result = await queryUEX({
+      endpoint,
+      queryParams: validatedFilter,
+      validationObject: UEXCommodityPricesResponseObject,
+    });
 
-  return result;
+    return result;
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      throw new Error(`Invalid filter parameters: ${error.message}`);
+    }
+    throw error;
+  }
 }
 
 export async function listAllCommoditiesPrices(): Promise<UEXCommodityPricesAllList> {

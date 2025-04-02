@@ -43,16 +43,51 @@ import {
   UEXItemPriceAllObject,
 } from "@uex/items/types";
 
+// Define basic structures for moon, outpost, and POI entities
+export interface BasicMoonEntity {
+  id: number | string;
+  name: string;
+  [key: string]: any;
+}
+
+export interface BasicOutpostEntity {
+  id: number | string;
+  name: string;
+  [key: string]: any;
+}
+
+export interface BasicPOIEntity {
+  id: number | string;
+  name: string;
+  [key: string]: any;
+}
+
+// Define Zod schemas for validation
+export const BasicMoonEntitySchema = z.object({
+  id: z.union([z.number(), z.string()]),
+  name: z.string(),
+}).catchall(z.any());
+
+export const BasicOutpostEntitySchema = z.object({
+  id: z.union([z.number(), z.string()]),
+  name: z.string(),
+}).catchall(z.any());
+
+export const BasicPOIEntitySchema = z.object({
+  id: z.union([z.number(), z.string()]),
+  name: z.string(),
+}).catchall(z.any());
+
 export interface EnhancedPlanet extends UEXPlanet {
-  moons?: any[];
-  outposts?: any[];
-  pois?: any[];
+  moons?: BasicMoonEntity[];
+  outposts?: BasicOutpostEntity[];
+  pois?: BasicPOIEntity[];
 }
 
 export const EnhancedPlanetObject = UEXPlanetObject.extend({
-  moons: z.array(z.any()).optional(),
-  outposts: z.array(z.any()).optional(),
-  pois: z.array(z.any()).optional(),
+  moons: z.array(BasicMoonEntitySchema).optional(),
+  outposts: z.array(BasicOutpostEntitySchema).optional(),
+  pois: z.array(BasicPOIEntitySchema).optional(),
 });
 
 export const LocationSystemDataObject = z.object({

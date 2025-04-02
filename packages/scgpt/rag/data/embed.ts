@@ -82,6 +82,41 @@ function processMetadata(
 }
 
 /**
+ * Validates a chunk object against the expected schema
+ * @returns Object containing validation result and sanitized chunk if valid
+ */
+function validateChunk(chunk: any): { valid: boolean; sanitized?: ChunkObject } {
+  // Ensure it's an object
+  if (typeof chunk !== 'object' || chunk === null) {
+    return { valid: false };
+  }
+  
+  // Check required fields
+  if (typeof chunk.text !== 'string') {
+    return { valid: false };
+  }
+  
+  // Sanitized version of the chunk
+  const sanitized: ChunkObject = {
+    id: typeof chunk.id === 'string' ? chunk.id : `chunk-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+    text: chunk.text
+  };
+  
+  // Validate and sanitize metadata if present
+  if (chunk.metadata !== undefined) {
+    if (typeof chunk.metadata !== 'object' || chunk.metadata === null) {
+      // Invalid metadata, don't include it
+      return { valid: true, sanitized };
+    }
+    
+    // Include metadata but it will be sanitized by processMetadata later
+    sanitized.metadata = chunk.metadata;
+  }
+  
+  return { valid: true, sanitized };
+}
+
+/**
  * Embeds text chunks and uploads directly to Pinecone
  */
 async function embedAndUploadToPinecone(): Promise<void> {
@@ -113,22 +148,40 @@ async function embedAndUploadToPinecone(): Promise<void> {
     // Read chunks from file
     console.log(`Reading chunks from ${CHUNKS_FILE}...`);
     const fileContent = fs.readFileSync(CHUNKS_FILE, "utf-8");
-    let chunks: ChunkObject[];
+    let rawChunks: any[];
 
     try {
-      chunks = JSON.parse(fileContent);
+      rawChunks = JSON.parse(fileContent);
     } catch (e) {
       throw new Error(`Failed to parse JSON file: ${e}`);
     }
 
-    if (!Array.isArray(chunks)) {
+    if (!Array.isArray(rawChunks)) {
       throw new Error("File content is not a list of chunks.");
     }
 
-    console.log(`Found ${chunks.length} chunks for processing`);
+    // Validate and sanitize each chunk
+    const validatedChunks: ChunkObject[] = [];
+    let invalidCount = 0;
+    
+    for (const chunk of rawChunks) {
+      const validation = validateChunk(chunk);
+      if (validation.valid && validation.sanitized) {
+        validatedChunks.push(validation.sanitized);
+      } else {
+        invalidCount++;
+      }
+    }
+
+    console.log(`Found ${validatedChunks.length} valid chunks for processing (${invalidCount} invalid chunks skipped)`);
+
+    // If we don't have any valid chunks, stop processing
+    if (validatedChunks.length === 0) {
+      throw new Error("No valid chunks found in the input file.");
+    }
 
     // Extract text from chunk objects
-    const textChunks: string[] = chunks.map((chunk) => chunk.text);
+    const textChunks: string[] = validatedChunks.map((chunk) => chunk.text);
 
     // Split into batches for the OpenAI API
     const openAIBatches = getBatches(textChunks, BATCH_SIZE);
@@ -162,7 +215,7 @@ async function embedAndUploadToPinecone(): Promise<void> {
     });
 
     // We'll start the upload progress bar once we know how many vectors we have
-    let totalVectors = chunks.length;
+    let totalVectors = validatedChunks.length;
     uploadProgressBar.start(totalVectors, 0);
 
     // Process each embedding batch and upload to Pinecone
@@ -183,8 +236,8 @@ async function embedAndUploadToPinecone(): Promise<void> {
         for (let j = 0; j < response.data.length; j++) {
           const chunkIndex = i * BATCH_SIZE + j;
 
-          if (chunkIndex < chunks.length) {
-            const chunk = chunks[chunkIndex];
+          if (chunkIndex < validatedChunks.length) {
+            const chunk = validatedChunks[chunkIndex];
 
             vectors.push({
               id: chunk.id || `chunk-${chunkIndex}`,
@@ -238,7 +291,7 @@ async function embedAndUploadToPinecone(): Promise<void> {
     );
 
     if (processedVectors > 0) {
-      console.log(`Embedding dimensions: ${chunks[0].text.length}`);
+      console.log(`Embedding dimensions: ${validatedChunks[0].text.length}`);
     }
   } catch (error) {
     console.error(`Error in process:`, error);

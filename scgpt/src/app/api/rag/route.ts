@@ -34,12 +34,71 @@ async function getIpAddress(req: Request): Promise<string> {
   return "unknown";
 }
 
+// Helper function to validate and sanitize the query
+function validateAndSanitizeQuery(query: string): { 
+  isValid: boolean; 
+  sanitizedQuery: string; 
+  error?: string 
+} {
+  // Check if query is empty or too long
+  if (!query || query.trim() === '') {
+    return { isValid: false, sanitizedQuery: '', error: 'Query cannot be empty' };
+  }
+  
+  if (query.length > 1000) {
+    return { isValid: false, sanitizedQuery: '', error: 'Query is too long (max 1000 characters)' };
+  }
+
+  // Basic sanitization - trim whitespace
+  const sanitizedQuery = query.trim();
+  
+  // Check for common prompt injection patterns
+  const promptInjectionPatterns = [
+    /ignore previous instructions/i,
+    /disregard all previous commands/i,
+    /forget your original instructions/i,
+    /ignore all previous prompts/i,
+    /system prompt:/i,
+    /you are now/i
+  ];
+  
+  for (const pattern of promptInjectionPatterns) {
+    if (pattern.test(sanitizedQuery)) {
+      return { 
+        isValid: false, 
+        sanitizedQuery: '', 
+        error: 'Potentially harmful query detected' 
+      };
+    }
+  }
+  
+  return { isValid: true, sanitizedQuery };
+}
+
 export async function POST(req: Request) {
   // Connect to database
   await connectToDatabase();
 
   // Extract data from request
-  const { query } = await req.json();
+  let requestData;
+  try {
+    requestData = await req.json();
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Invalid JSON in request body' },
+      { status: 400 }
+    );
+  }
+  
+  // Validate that query exists and is a string
+  if (!requestData.query || typeof requestData.query !== 'string') {
+    return NextResponse.json(
+      { error: 'Invalid request: query is required and must be a string' },
+      { status: 400 }
+    );
+  }
+  
+  const query = requestData.query;
 
   // Get IP address
   const ip = await getIpAddress(req);
@@ -79,8 +138,18 @@ export async function POST(req: Request) {
     console.error("Error initializing request log:", error);
   }
 
+  // Validate and sanitize the query
+  const { isValid, sanitizedQuery, error } = validateAndSanitizeQuery(query);
+  
+  if (!isValid) {
+    return NextResponse.json(
+      { error: error || 'Invalid query' },
+      { status: 400 }
+    );
+  }
+
   // Process the query with the RAG system
-  const stream = await askRAGStream(query);
+  const stream = await askRAGStream(sanitizedQuery);
 
   // Return streaming response
   return new NextResponse(
